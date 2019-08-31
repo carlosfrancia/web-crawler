@@ -1,4 +1,4 @@
-package cmd
+package temp
 
 import (
 	"fmt"
@@ -10,7 +10,8 @@ import (
 )
 
 // TODO CAN I USE A STRUCT- DELETE OTHERWISE
-type rootConfig struct {
+type webcrawlerConfig struct {
+	url          string
 	outputConfig *os.File
 }
 
