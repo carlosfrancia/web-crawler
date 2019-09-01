@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/carlosfrancia/web-crawler/webcrawler"
@@ -73,11 +74,15 @@ func newWebcrawlerConfig() (*webCrawlerConfig, error) {
 
 	// TODO Check URL format. error if it doesn't start with http, https or www.
 	// If starts with www add http
+	// ACCEPT ONLY HTTP or HTTPS. ERROR IF NOT
 
 	switch {
 	case (url == ""):
 		flags.Usage()
 		return nil, fmt.Errorf("Url to be crawled must be specified")
+	case (!strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "https://")):
+		flags.Usage()
+		return nil, fmt.Errorf("Url must start with HTTP or HTTPS")
 	}
 	return &webCrawlerConfig{
 		url:        url,

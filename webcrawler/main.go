@@ -11,17 +11,34 @@ import (
 	"github.com/carlosfrancia/web-crawler/utils"
 )
 
+type webcrawlerConfig struct {
+	domain     string
+	url        string
+	outputFile *os.File
+	isVisited  *safeIsVisited
+}
+
 type safeIsVisited struct {
 	sync.RWMutex
 	m map[string]bool
 }
 
-// type safeIsVisited struct {
-// 	m   map[string]bool
-// 	mux sync.Mutex
-// }
+// Set - Set given value to the given key
+func (c *safeIsVisited) set(key string, value bool) {
+	c.Lock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	c.m[key] = value
+	c.Unlock()
+}
 
-var c chan string
+// Value returns mapped value for the given key.
+func (c *safeIsVisited) get(key string) bool {
+	c.RLock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	defer c.RUnlock()
+	val := c.m[key]
+	return val
+}
 
 // Run - Main control function, has to decide whether to continue or exit at each step
 func Run(url, outputFileName string) error {
@@ -34,86 +51,71 @@ func Run(url, outputFileName string) error {
 	defer output.Close()
 
 	ch := make(chan string)
-	isVisited := safeIsVisited{
-		m: make(map[string]bool),
+	config := webcrawlerConfig{
+		domain:     url,
+		url:        url,
+		outputFile: output,
+		isVisited: &safeIsVisited{
+			m: make(map[string]bool),
+		},
 	}
 
-	go parseURL(url, output, isVisited, ch)
+	go parseURL(config, ch)
 	for resp := range ch {
+		// TODO This is needed, should I write file here?
 		fmt.Println("RESULT" + resp)
-
 	}
 	log.Info("Web crawled has finished.")
 	return nil
 }
 
-func isHrefVisited(href string, isVisited safeIsVisited) bool {
-	isVisited.RLock()
-	result := isVisited.m[href]
-	return result
-}
-
-func getUnvisited(allUrls []string, isVisited safeIsVisited) (unvisitedUrls []string) {
+func getUnvisited(allUrls []string, isVisited *safeIsVisited) (unvisitedUrls []string) {
 
 	for _, url := range allUrls {
-		if !isHrefVisited(url, isVisited) {
+		if !isVisited.get(url) {
 			unvisitedUrls = append(unvisitedUrls, url)
 		}
 	}
-	print("univisited")
-	print(unvisitedUrls)
 	return
 }
 
-func parseURL(url string, output *os.File, isVisited safeIsVisited, ch chan string) {
-
+func parseURL(config webcrawlerConfig, ch chan string) {
 	defer close(ch)
-	println(url)
-	isVisited.RLock()
-	if isVisited.m[url] {
-		isVisited.RUnlock()
+	if config.isVisited.get(config.url) {
 		return
 	}
-	isVisited.RUnlock()
-	isVisited.Lock()
-	isVisited.m[url] = true
-	isVisited.Unlock()
-	fmt.Fprint(output, fmt.Sprintf("%s \n", url))
+	config.isVisited.set(config.url, true)
+	fmt.Fprint(config.outputFile, fmt.Sprintf("%s \n", config.url))
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
-	response, err := client.Get(url)
+	response, err := client.Get(config.url)
 	if err != nil {
-		print("ERROR processing URL:" + url + "\n")
+		print("ERROR processing URL:" + config.url + "\n")
 		log.WithFields(log.Fields{
-			"Url":   url,
+			"Url":   config.url,
 			"Error": err,
 		}).Info("Error processing url")
 		return
 	}
 	defer response.Body.Close()
-	ch <- url
+	ch <- config.url
 	allUrls := utils.GetDomainLinks(response.Body)
-	println(len(allUrls))
-	println(allUrls)
-	if len(allUrls) == 0 {
-		return
-	}
-	unvisitedUrls := getUnvisited(allUrls, isVisited)
+	// println(len(allUrls))
+	// println(allUrls)
+
+	unvisitedUrls := getUnvisited(allUrls, config.isVisited)
 	result := make([]chan string, len(unvisitedUrls))
 	for i, url := range unvisitedUrls {
-
+		config.url = url
 		result[i] = make(chan string)
-		go parseURL(url, output, isVisited, result[i])
+		go parseURL(config, result[i])
 
 	}
-
 	for i := range result {
 		for response := range result[i] {
 			ch <- response
 		}
 	}
-
 	return
-
 }
