@@ -4,41 +4,24 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	log "github.com/Sirupsen/logrus"
+	"github.com/carlosfrancia/web-crawler/utils"
 )
 
-// TODO CAN I USE A STRUCT- DELETE OTHERWISE
-type webcrawlerRunner struct {
-	url        string
-	outputFile *os.File
-	visited    string
+type safeIsVisited struct {
+	sync.RWMutex
+	m map[string]bool
 }
 
-// // Runner2 - TODO
-// type Runner2 struct {
-// 	Url        string
-// 	OutputFile *os.File
-// 	Visited    string
+// type safeIsVisited struct {
+// 	m   map[string]bool
+// 	mux sync.Mutex
 // }
 
-//TODO
-
-// // NewWebCrawlerRunner - OPTION 2 Create a runner
-// func NewWebCrawlerRunner(url string) (r *Runner2, err error) {
-
-// 	// TODO SHOULD I TAKE THIS METHOD TO THE MAIN AND CALL THIS FIRST AS CREATE NEW RUNNER
-// 	//
-// 	// WHICH WILL RETURN A WEBCRAWLERRUNNER AND THEN DO R.PARSEPAGE?
-
-// 	return &Runner2{
-// 		Url:        url,
-// 		OutputFile: nil,
-// 		Visited:    "to be done",
-// 	}, nil
-
-// }
+var c chan string
 
 // Run - Main control function, has to decide whether to continue or exit at each step
 func Run(url, outputFileName string) error {
@@ -47,105 +30,90 @@ func Run(url, outputFileName string) error {
 	if err != nil {
 		return fmt.Errorf("failed writing to file '%s': %s", outputFileName, err)
 	}
+	fmt.Fprint(output, fmt.Sprintf("Sitemap for URL: %s \n", url))
 	defer output.Close()
-	r := webcrawlerRunner{
-		url:        url,
-		outputFile: output,
-		visited:    "to be done",
+
+	ch := make(chan string)
+	isVisited := safeIsVisited{
+		m: make(map[string]bool),
 	}
-	r.parsePage()
+
+	go parseURL(url, output, isVisited, ch)
+	for resp := range ch {
+		fmt.Println("RESULT" + resp)
+
+	}
 	log.Info("Web crawled has finished.")
 	return nil
 }
 
-func (r *webcrawlerRunner) processElement(index int, element *goquery.Selection) {
-	// Check if it is a legitime link
-	href, exists := element.Attr("href")
-	//	if exists && noExternal(href) && isNotProcessed(href) {
-	// add href to Map
-	// print link
-	if exists {
-		// fmt.Println(href)
-		fmt.Fprint(r.outputFile, fmt.Sprintf("%s \n", href))
-	}
+func isHrefVisited(href string, isVisited safeIsVisited) bool {
+	isVisited.RLock()
+	result := isVisited.m[href]
+	return result
 }
 
-func (r *webcrawlerRunner) parsePage() {
-	// ERROR MANAGEMENT!!!! This can return an error i.e if an empty URL is passed. I think the error is handled
-	// Make HTTP request. What actually happens if one of the link is broken? Will it fail? You can do something instead of
-	// log.Fatal and continue. Catch the error and continue
+func getUnvisited(allUrls []string, isVisited safeIsVisited) (unvisitedUrls []string) {
 
-	log.WithField("Url", r.url).Info("Starting parsing URL")
-	fmt.Fprint(r.outputFile, fmt.Sprintf("Sitemap for URL: %s \n", r.url))
+	for _, url := range allUrls {
+		if !isHrefVisited(url, isVisited) {
+			unvisitedUrls = append(unvisitedUrls, url)
+		}
+	}
+	print("univisited")
+	print(unvisitedUrls)
+	return
+}
 
-	response, err := http.Get(r.url)
+func parseURL(url string, output *os.File, isVisited safeIsVisited, ch chan string) {
+
+	defer close(ch)
+	println(url)
+	isVisited.RLock()
+	if isVisited.m[url] {
+		isVisited.RUnlock()
+		return
+	}
+	isVisited.RUnlock()
+	isVisited.Lock()
+	isVisited.m[url] = true
+	isVisited.Unlock()
+	fmt.Fprint(output, fmt.Sprintf("%s \n", url))
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	response, err := client.Get(url)
 	if err != nil {
+		print("ERROR processing URL:" + url + "\n")
 		log.WithFields(log.Fields{
-			"Url":   r.url,
+			"Url":   url,
 			"Error": err,
-		}).Fatal("Error processing url")
+		}).Info("Error processing url")
+		return
 	}
 	defer response.Body.Close()
+	ch <- url
+	allUrls := utils.GetDomainLinks(response.Body)
+	println(len(allUrls))
+	println(allUrls)
+	if len(allUrls) == 0 {
+		return
+	}
+	unvisitedUrls := getUnvisited(allUrls, isVisited)
+	result := make([]chan string, len(unvisitedUrls))
+	for i, url := range unvisitedUrls {
 
-	// Create a goquery document from the HTTP response
-	document, err := goquery.NewDocumentFromReader(response.Body)
-	if err != nil {
-		log.Fatal("Error loading HTTP response body. ", err)
+		result[i] = make(chan string)
+		go parseURL(url, output, isVisited, result[i])
+
 	}
 
-	// Find all links and process them
-	var aTags = document.Find("a")
+	for i := range result {
+		for response := range result[i] {
+			ch <- response
+		}
+	}
 
-	// put in a map
+	return
 
-	// link1 > false
-	// link2 > false
-
-	aTags.Each(r.processElement)
 }
-
-// func (r *Runner2) processElement2(index int, element *goquery.Selection) {
-// 	// Check if it is a legitime link
-// 	href, exists := element.Attr("href")
-// 	//	if exists && noExternal(href) && isNotProcessed(href) {
-// 	// add href to Map
-// 	// print link
-// 	if exists {
-// 		fmt.Println(href)
-// 	}
-// }
-
-// // ParsePage2 -
-// func (r *Runner2) ParsePage2() {
-// 	// ERROR MANAGEMENT!!!! This can return an error i.e if an empty URL is passed. I think the error is handled
-// 	// Make HTTP request. What actually happens if one of the link is broken? Will it fail? You can do something instead of
-// 	// log.Fatal and continue. Catch the error and continue
-
-// 	log.WithField("Url", r.Url).Info("Starting parsing URL")
-// 	fmt.Fprint(r.OutputFile, fmt.Sprintf("Sitemap for URL: %s \n", r.Url))
-
-// 	response, err := http.Get(r.Url)
-// 	if err != nil {
-// 		log.WithFields(log.Fields{
-// 			"Url":   r.Url,
-// 			"Error": err,
-// 		}).Fatal("Error processing url")
-// 	}
-// 	defer response.Body.Close()
-
-// 	// Create a goquery document from the HTTP response
-// 	document, err := goquery.NewDocumentFromReader(response.Body)
-// 	if err != nil {
-// 		log.Fatal("Error loading HTTP response body. ", err)
-// 	}
-
-// 	// Find all links and process them
-// 	var aTags = document.Find("a")
-
-// 	// put in a map
-
-// 	// link1 > false
-// 	// link2 > false
-
-// 	aTags.Each(r.processElement2)
-// }

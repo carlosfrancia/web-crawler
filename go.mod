@@ -7,6 +7,9 @@ require (
 	github.com/Sirupsen/logrus v0.0.0-20170215164324-7f4b1adc7917
 	github.com/pkg/errors v0.8.1
 	github.com/stretchr/testify v1.4.0 // indirect
+	golang.org/x/net v0.0.0-20181114220301-adae6a3d119a
 )
 
-replace github.com/carlosfrancia/web-crawler/webcrawler => ./web-crawler
+replace github.com/carlosfrancia/web-crawler/webcrawler => ./webcrawler
+
+replace github.com/carlosfrancia/web-crawler/utils => ./utils
