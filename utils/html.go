@@ -4,46 +4,41 @@ import (
 	"io"
 	"strings"
 
+	"github.com/asaskevich/govalidator"
 	"golang.org/x/net/html"
 )
 
-// GetDomainLinks - Get all links of a HTML Body
-func GetDomainLinks(b io.Reader) (urls []string) {
-
-	// var urls = []string{}
+// GetDomainLinks - Get all links which belong to the domain of a HTML Body
+func GetDomainLinks(b io.Reader, domain string) (urls []string) {
 	z := html.NewTokenizer(b)
-
 	for {
 		tt := z.Next()
 		switch {
 		case tt == html.ErrorToken:
-			// End of the document, we're done
+			//Document ended. We are done
 			return
 		case tt == html.StartTagToken:
 			t := z.Token()
-			// Check if the token is an <a> tag
+			// Check if it itis an <a> tag
 			isAnchor := t.Data == "a"
 			if !isAnchor {
 				continue
 			}
-			// Extract the href value, if there is one
-			ok, url := getHref(t)
+			ok, href := getHref(t)
 			if !ok {
 				continue
 			} else {
-				// TODO IF IS DOMAIN AND .....
-				if strings.HasPrefix(url, "/") {
-					// println(url)
-					urls = append(urls, "https://www.monzo.com"+url)
+				isDomain, link := isValidDomainLink(href, domain)
+				if isDomain {
+					urls = append(urls, link)
 				}
 			}
 		}
 	}
 }
 
-// Helper function to pull the href attribute from a Token
+// getHref - Get href attribute from a Token
 func getHref(t html.Token) (ok bool, href string) {
-	// Iterate over all of the Token's attributes until we find an "href"
 	for _, a := range t.Attr {
 		if a.Key == "href" {
 			href = a.Val
@@ -51,4 +46,15 @@ func getHref(t html.Token) (ok bool, href string) {
 		}
 	}
 	return
+}
+
+// isDomainLink - Return wether an href is a valid URL and belongs to the domain or not
+func isValidDomainLink(href string, domain string) (bool, string) {
+	if strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") {
+		href = domain + href
+	}
+	if govalidator.IsURL(href) && strings.HasPrefix(href, domain) {
+		return true, href
+	}
+	return false, ""
 }

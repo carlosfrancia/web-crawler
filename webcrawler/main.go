@@ -11,11 +11,15 @@ import (
 	"github.com/carlosfrancia/web-crawler/utils"
 )
 
-type webcrawlerConfig struct {
+type webcrawlerRunner struct {
+	Client     *http.Client
 	domain     string
-	url        string
 	outputFile *os.File
-	isVisited  *safeIsVisited
+}
+
+type webcrawlerConfig struct {
+	url       string
+	isVisited *safeIsVisited
 }
 
 type safeIsVisited struct {
@@ -26,49 +30,55 @@ type safeIsVisited struct {
 // Set - Set given value to the given key
 func (c *safeIsVisited) set(key string, value bool) {
 	c.Lock()
-	// Lock so only one goroutine at a time can access the map c.v.
+	// Lock so only one goroutine at a time can access the map
 	c.m[key] = value
 	c.Unlock()
 }
 
-// Value returns mapped value for the given key.
+// Get - Returns mapped value for the given key.
 func (c *safeIsVisited) get(key string) bool {
 	c.RLock()
-	// Lock so only one goroutine at a time can access the map c.v.
+	// Lock so only one goroutine at a time can access the map
 	defer c.RUnlock()
 	val := c.m[key]
 	return val
 }
 
-// Run - Main control function, has to decide whether to continue or exit at each step
+// Run - Initial function, needs to create all required items, call the parser and wait for finish
 func Run(url, outputFileName string) error {
 
+	// Create the file for the sitemap
 	output, err := os.Create(outputFileName)
 	if err != nil {
 		return fmt.Errorf("failed writing to file '%s': %s", outputFileName, err)
 	}
 	fmt.Fprint(output, fmt.Sprintf("Sitemap for URL: %s \n", url))
 	defer output.Close()
-
+	// Create initial channel and configuration
 	ch := make(chan string)
 	config := webcrawlerConfig{
-		domain:     url,
-		url:        url,
-		outputFile: output,
+		url: url,
 		isVisited: &safeIsVisited{
 			m: make(map[string]bool),
 		},
 	}
-
-	go parseURL(config, ch)
-	for resp := range ch {
-		// TODO This is needed, should I write file here?
-		fmt.Println("RESULT" + resp)
+	// Create the runner
+	r := webcrawlerRunner{
+		Client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		domain:     url,
+		outputFile: output,
+	}
+	go r.parseURL(config, ch)
+	// Wait until all channels have been closed
+	for range ch {
 	}
 	log.Info("Web crawled has finished.")
 	return nil
 }
 
+// getUnvisited - Remove already visited URLs from a given slice
 func getUnvisited(allUrls []string, isVisited *safeIsVisited) (unvisitedUrls []string) {
 
 	for _, url := range allUrls {
@@ -79,39 +89,44 @@ func getUnvisited(allUrls []string, isVisited *safeIsVisited) (unvisitedUrls []s
 	return
 }
 
-func parseURL(config webcrawlerConfig, ch chan string) {
+// parseURL - Parse recursively an URL and send the desired URLs to the channel
+func (r *webcrawlerRunner) parseURL(config webcrawlerConfig, ch chan string) {
 	defer close(ch)
+	// If URL has already visited do nothing and return
 	if config.isVisited.get(config.url) {
 		return
 	}
+	// If hasn't been visited yet add it to the visite map
 	config.isVisited.set(config.url, true)
-	fmt.Fprint(config.outputFile, fmt.Sprintf("%s \n", config.url))
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	response, err := client.Get(config.url)
+	fmt.Fprint(r.outputFile, fmt.Sprintf("%s \n", config.url))
+	// Make the request
+	response, err := r.Client.Get(config.url)
 	if err != nil {
-		print("ERROR processing URL:" + config.url + "\n")
+		// Log if error with one request. Do not exit as it could be legitime
 		log.WithFields(log.Fields{
 			"Url":   config.url,
 			"Error": err,
 		}).Info("Error processing url")
 		return
 	}
+	// Close the connection at the end of the function
 	defer response.Body.Close()
+	// Add response (url) to the channel
 	ch <- config.url
-	allUrls := utils.GetDomainLinks(response.Body)
-	// println(len(allUrls))
-	// println(allUrls)
-
+	// Get all the links which belong to the domain
+	allUrls := utils.GetDomainLinks(response.Body, r.domain)
+	// From the entire list, exclude those already visited
 	unvisitedUrls := getUnvisited(allUrls, config.isVisited)
+	// Create an array of channels with the lengh of th URL to be processed
 	result := make([]chan string, len(unvisitedUrls))
+	// Process each one in a new go routine
 	for i, url := range unvisitedUrls {
 		config.url = url
 		result[i] = make(chan string)
-		go parseURL(config, result[i])
+		go r.parseURL(config, result[i])
 
 	}
+	// Loop through the channels and set the response in the channel
 	for i := range result {
 		for response := range result[i] {
 			ch <- response
