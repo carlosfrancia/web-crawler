@@ -11,11 +11,12 @@ WORKDIR /src/web-crawler
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Build the application
 COPY . .
 RUN go build -a --installsuffix cgo
 
 # Run tests
-#RUN go test -v ./...
+RUN go test -v ./...
 
 # Production image stage
 FROM alpine:3.10
