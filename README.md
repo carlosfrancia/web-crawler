@@ -21,8 +21,13 @@ Clone the repository and build the application using go. This applications uses 
 
 Once the applicaiton has been built execute the binary with the minimum required arguments (-url)
 
-`./web-crawler -url https://www.monzo.com`
+`./web-crawler -url https://www.domain.com`
 
+This will create a new file named `sitemap.txt` in the current locaiton. 
+
+Optionally you can specify the path where the output file must be created:
+
+`./web-crawler -url https://www.domain.com -output-file path_to_sitemap`
 
 ## Using Docker
 
@@ -40,7 +45,7 @@ Build the image with Docker, i.e.
 
 #### Run Webcrawler with Docker 
 
-For execution with Docker the `-output-file` parameter is required and must match the mapped volume, i.e.
+For execution with Docker a volume needs to be created with the desired location where the output will be created. `-output-file` parameter is required and must match the mapped volume, i.e.
 
-`docker run -v $(pwd):/data web-crawler -url https://www.website.com -output-file /data/my-sitemap.txt`
+`docker run -v $(pwd):/data web-crawler -url https://www.domain.com -output-file /data/my-sitemap.txt`
 
