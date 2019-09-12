@@ -20,9 +20,6 @@ type webCrawlerConfig struct {
 	outputFile string
 }
 
-// TODO IMPORTANT
-// YOU DONT NEED CONFIG. YOU CAN USE VARIABLES, THEY ARE GLOBAL
-
 func init() {
 	flags.StringVar(
 		&logLevel, "log-level", "info", fmt.Sprintf("Log level, valid "+
