@@ -19,6 +19,7 @@ RUN go build -a --installsuffix cgo
 RUN go test -v ./...
 
 # Production image stage
+#TODO FROM scracth You will need to copy something else 
 FROM alpine:3.10
 
 RUN apk --no-cache --update upgrade \
