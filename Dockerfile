@@ -6,6 +6,9 @@ ENV CGO_ENABLED 0
 RUN apk update && apk add git bash
 SHELL ["/bin/bash", "-c"]
 
+RUN apk --no-cache --update upgrade \
+    && apk --no-cache add ca-certificates
+
 WORKDIR /src/web-crawler
 
 COPY go.mod go.sum ./
@@ -19,11 +22,11 @@ RUN go build -a --installsuffix cgo
 RUN go test -v ./...
 
 # Production image stage
-FROM alpine:3.10
+FROM scratch
 
-RUN apk --no-cache --update upgrade \
-    && apk --no-cache add ca-certificates
+# Import from builder.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-COPY --from=builder /src/web-crawler/web-crawler /usr/local/bin/
+COPY --from=builder /src/web-crawler/web-crawler /web-crawler
 
-ENTRYPOINT ["/usr/local/bin/web-crawler"]
+ENTRYPOINT ["/web-crawler"]
