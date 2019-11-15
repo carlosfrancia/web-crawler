@@ -93,13 +93,16 @@ func getUnvisited(allUrls []string, isVisited *safeIsVisited) (unvisitedUrls []s
 func (r *webcrawlerRunner) parseURL(config webcrawlerConfig, ch chan string) {
 	defer close(ch)
 	// If URL has already visited do nothing and return
+	// TODO TO avoid a race condition while get isVisited and set, do it in the same method, lock -> get-> if not exist -> set -> unlock
 	if config.isVisited.get(config.url) {
 		return
 	}
 	// If hasn't been visited yet add it to the visite map
 	config.isVisited.set(config.url, true)
+	// TODO Is fmt thread safe?
 	fmt.Fprint(r.outputFile, fmt.Sprintf("%s \n", config.url))
 	// Make the request
+	// TODO Handle limit of sockets (file descriptors)
 	response, err := r.Client.Get(config.url)
 	if err != nil {
 		// Log if error with one request. Do not exit as it could be legitime
