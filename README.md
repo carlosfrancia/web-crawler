@@ -11,7 +11,7 @@ For the domain http://www.mydomain.com the application parses the initial page a
 
 ## Instalation
 
-###Requirements
+### Requirements
 
 - This application has been built and tested with Golang 1.12
 
